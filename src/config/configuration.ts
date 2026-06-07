@@ -1,15 +1,17 @@
-// Cấu hình tập trung, đọc từ biến môi trường (.env)
+const numberFromEnv = (value: string | undefined, fallback: number) =>
+  parseInt(value ?? String(fallback), 10);
+
 export default () => ({
-  port: parseInt(process.env.PORT ?? '3001', 10),
+  port: numberFromEnv(process.env.PORT, 3001),
   apiPrefix: process.env.API_PREFIX ?? 'api/v1',
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:3000',
 
   database: {
-    host: process.env.DB_HOST ?? 'localhost',
-    port: parseInt(process.env.DB_PORT ?? '3306', 10),
-    username: process.env.DB_USERNAME ?? 'root',
-    password: process.env.DB_PASSWORD ?? '',
-    name: process.env.DB_NAME ?? 'web_lyn',
+    host: process.env.DB_HOST ?? process.env.MYSQLHOST ?? 'localhost',
+    port: numberFromEnv(process.env.DB_PORT ?? process.env.MYSQLPORT, 3306),
+    username: process.env.DB_USERNAME ?? process.env.MYSQLUSER ?? 'root',
+    password: process.env.DB_PASSWORD ?? process.env.MYSQLPASSWORD ?? '',
+    name: process.env.DB_NAME ?? process.env.MYSQLDATABASE ?? 'web_lyn',
     synchronize: process.env.DB_SYNCHRONIZE === 'true',
     migrationsRun: process.env.DB_MIGRATIONS_RUN === 'true',
     logging: process.env.DB_LOGGING === 'true',
@@ -30,10 +32,7 @@ export default () => ({
     supportBotApiBaseUrl:
       process.env.SUPPORT_BOT_API_BASE_URL ??
       'https://generativelanguage.googleapis.com/v1beta/openai',
-    supportBotTimeoutMs: parseInt(
-      process.env.SUPPORT_BOT_TIMEOUT_MS ?? '10000',
-      10,
-    ),
+    supportBotTimeoutMs: numberFromEnv(process.env.SUPPORT_BOT_TIMEOUT_MS, 10000),
     openaiApiKey: process.env.OPENAI_API_KEY ?? process.env.WHISPER_API_KEY ?? '',
     openaiTranscribeModel:
       process.env.OPENAI_TRANSCRIBE_MODEL ?? 'gpt-4o-mini-transcribe',
@@ -42,6 +41,6 @@ export default () => ({
 
   uploads: {
     dir: process.env.UPLOAD_DIR ?? 'uploads',
-    maxBytes: parseInt(process.env.UPLOAD_MAX_BYTES ?? '26214400', 10),
+    maxBytes: numberFromEnv(process.env.UPLOAD_MAX_BYTES, 26214400),
   },
 });

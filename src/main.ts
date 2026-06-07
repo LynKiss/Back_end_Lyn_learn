@@ -1,24 +1,35 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { NestExpressApplication } from '@nestjs/platform-express';
+import { webcrypto } from 'crypto';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+
+if (!globalThis.crypto) {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: webcrypto,
+    configurable: true,
+  });
+}
 
 async function bootstrap() {
+  const { AppModule } = await import('./app.module.js');
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
 
-  // Bảo mật: ở production không cho chạy với secret JWT mặc định.
   if (process.env.NODE_ENV === 'production') {
     const access = config.get<string>('jwt.accessSecret') ?? '';
     const refresh = config.get<string>('jwt.refreshSecret') ?? '';
-    const weak = (s: string) => !s || s.length < 24 || s.includes('change-me') || s.includes('dev-');
+    const weak = (secret: string) =>
+      !secret ||
+      secret.length < 24 ||
+      secret.includes('change-me') ||
+      secret.includes('dev-');
     if (weak(access) || weak(refresh)) {
       throw new Error(
-        'JWT secret yếu/mặc định. Đặt JWT_ACCESS_SECRET & JWT_REFRESH_SECRET (chuỗi ngẫu nhiên ≥24 ký tự) trước khi deploy.',
+        'Weak JWT secret. Set JWT_ACCESS_SECRET and JWT_REFRESH_SECRET to random strings with at least 24 characters.',
       );
     }
   }
@@ -43,10 +54,9 @@ async function bootstrap() {
   if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
   app.useStaticAssets(uploadDir, { prefix: '/uploads/' });
 
-  // Swagger tại /api/v1/docs
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Web_Lyn API')
-    .setDescription('API nền tảng học ngoại ngữ tích hợp AI')
+    .setDescription('AI language learning platform API')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
@@ -55,6 +65,7 @@ async function bootstrap() {
 
   const port = config.get<number>('port', 3001);
   await app.listen(port);
-  console.log(`🚀 API chạy tại http://localhost:${port}/${apiPrefix}`);
+  console.log(`API running at http://localhost:${port}/${apiPrefix}`);
 }
+
 bootstrap();

@@ -43,4 +43,11 @@ export default () => ({
     dir: process.env.UPLOAD_DIR ?? 'uploads',
     maxBytes: numberFromEnv(process.env.UPLOAD_MAX_BYTES, 26214400),
   },
+
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? process.env.CLOUD_NAME ?? '',
+    apiKey: process.env.CLOUDINARY_API_KEY ?? process.env.API_KEY ?? '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET ?? process.env.API_SECRET ?? '',
+    folder: process.env.CLOUDINARY_FOLDER ?? 'web_lyn',
+  },
 });

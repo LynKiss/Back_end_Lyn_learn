@@ -18,6 +18,7 @@ import { LessonsController } from './lessons.controller';
 import { ExercisesController } from './exercises.controller';
 import { VocabularyController } from './vocabulary.controller';
 import { CategoriesController } from './categories.controller';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { CategoriesController } from './categories.controller';
       Vocabulary,
       Category,
     ]),
+    AuditModule,
   ],
   controllers: [
     CoursesController,

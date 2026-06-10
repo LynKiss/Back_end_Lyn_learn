@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Course } from '../courses/entities/course.entity';
 import { User } from '../users/entities/user.entity';
 import { GamificationModule } from '../gamification/gamification.module';
+import { PersonalizationModule } from '../personalization/personalization.module';
 import { LearningPathController } from './learning-path.controller';
 import { LearningPathService } from './learning-path.service';
 import { LearningPath } from './entities/learning-path.entity';
@@ -13,6 +14,7 @@ import { PlacementResult } from './entities/placement-result.entity';
   imports: [
     TypeOrmModule.forFeature([PlacementResult, LearningPath, LearningPathItem, Course, User]),
     GamificationModule,
+    PersonalizationModule,
   ],
   controllers: [LearningPathController],
   providers: [LearningPathService],

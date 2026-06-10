@@ -17,4 +17,8 @@ export class XpEvent extends BaseEntity {
 
   @Column({ length: 80 })
   reason: string;
+
+  // Đối tượng được thưởng (lessonId, exerciseId, savedVocabularyId...) để chống farm.
+  @Column({ name: 'target_id', type: 'bigint', unsigned: true, nullable: true })
+  targetId: string | null;
 }

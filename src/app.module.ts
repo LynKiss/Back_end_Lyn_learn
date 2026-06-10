@@ -20,6 +20,8 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
 import { LearningPathModule } from './modules/learning-path/learning-path.module';
 import { WritingModule } from './modules/writing/writing.module';
 import { SpeakingModule } from './modules/speaking/speaking.module';
+import { PersonalizationModule } from './modules/personalization/personalization.module';
+import { ConversationModule } from './modules/conversation/conversation.module';
 
 @Module({
   imports: [
@@ -60,6 +62,8 @@ import { SpeakingModule } from './modules/speaking/speaking.module';
     LearningPathModule,
     WritingModule,
     SpeakingModule,
+    PersonalizationModule,
+    ConversationModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

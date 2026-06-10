@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { join, normalize } from 'path';
 import { Repository } from 'typeorm';
@@ -12,6 +12,8 @@ import { CreateSpeakingSubmissionDto } from './dto/speaking.dto';
 
 @Injectable()
 export class SpeakingService {
+  private readonly logger = new Logger(SpeakingService.name);
+
   constructor(
     @InjectRepository(SpeakingSubmission)
     private readonly submissions: Repository<SpeakingSubmission>,
@@ -70,8 +72,14 @@ export class SpeakingService {
       );
       submission.status = SubmissionStatus.REVIEWED;
       await this.gamification.awardXp(userId, 30, 'speaking_submission');
-    } catch {
+    } catch (err) {
+      // Không nuốt lỗi im lặng: log kèm ngữ cảnh để chẩn đoán AI/transcription.
       submission.status = SubmissionStatus.FAILED;
+      this.logger.error(
+        `Speaking review failed for submission ${submission.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
     await this.submissions.save(submission);
     return this.findOne(userId, submission.id);

@@ -63,12 +63,21 @@ export class SrsService {
     });
     if (!item) throw new NotFoundException('Không tìm thấy flashcard');
 
+    // Chống farm XP: chỉ thưởng khi thẻ THỰC SỰ đến hạn trước khi ôn.
+    // Dung sai 2s để bù việc cột datetime (không có mili-giây) làm tròn dueAt lên.
+    const wasDue = new Date(item.dueAt).getTime() <= Date.now() + 2000;
+
     this.applySm2(item, rating);
     await this.saved.save(item);
     await this.reviews.save(
       this.reviews.create({ savedVocabularyId: item.id, rating, reviewedAt: new Date() }),
     );
-    await this.gamification.awardXp(userId, 3, 'srs_review').catch(() => {});
+    if (wasDue) {
+      // Cộng XP một lần/thẻ/ngày qua targetId (gamification tự khử trùng theo ngày).
+      await this.gamification
+        .awardXp(userId, 3, 'srs_review', item.id)
+        .catch(() => {});
+    }
     return item;
   }
 

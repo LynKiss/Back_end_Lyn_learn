@@ -91,14 +91,52 @@ export class GamificationService {
     return { quests, completed: quests.filter((q) => q.done).length, total: quests.length };
   }
 
-  async awardXp(userId: string, amount: number, reason: string) {
+  // Trần XP/ngày theo lý do (chống học ảo); reason không liệt kê coi như không giới hạn.
+  private static readonly DAILY_CAP: Record<string, number> = {
+    srs_review: 90,
+    exercise_attempt: 300,
+    writing_submission: 60,
+    speaking_submission: 60,
+  };
+
+  async awardXp(
+    userId: string,
+    amount: number,
+    reason: string,
+    targetId?: string,
+  ) {
     const profile = await this.profiles.findOne({ where: { userId } });
     if (!profile) throw new NotFoundException('Không tìm thấy hồ sơ học viên');
+
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    // 1) Khử trùng: cùng (reason, targetId) trong ngày chỉ thưởng một lần.
+    if (targetId) {
+      const dup = await this.xpEvents.findOne({
+        where: { userId, reason, targetId, createdAt: MoreThanOrEqual(start) },
+      });
+      if (dup) return profile;
+    }
+
+    // 2) Trần XP/ngày theo lý do.
+    const cap = GamificationService.DAILY_CAP[reason];
+    if (cap != null) {
+      const todays = await this.xpEvents.find({
+        where: { userId, reason, createdAt: MoreThanOrEqual(start) },
+      });
+      const earned = todays.reduce((sum, e) => sum + e.amount, 0);
+      if (earned >= cap) return profile;
+      amount = Math.min(amount, cap - earned);
+    }
+    if (amount <= 0) return profile;
 
     profile.totalXp += amount;
     this.updateStreak(profile);
     await this.profiles.save(profile);
-    await this.xpEvents.save(this.xpEvents.create({ userId, amount, reason }));
+    await this.xpEvents.save(
+      this.xpEvents.create({ userId, amount, reason, targetId: targetId ?? null }),
+    );
     await this.syncBadges(userId, profile.totalXp);
     return profile;
   }

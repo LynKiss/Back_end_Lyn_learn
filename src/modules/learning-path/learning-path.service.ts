@@ -5,6 +5,7 @@ import { LearningPathStatus, PathItemStatus } from '../../common/enums';
 import { Course } from '../courses/entities/course.entity';
 import { User } from '../users/entities/user.entity';
 import { GamificationService } from '../gamification/gamification.service';
+import { PersonalizationService } from '../personalization/personalization.service';
 import { LearningPath } from './entities/learning-path.entity';
 import { LearningPathItem } from './entities/learning-path-item.entity';
 import { PlacementResult } from './entities/placement-result.entity';
@@ -15,6 +16,26 @@ const SCALE_LEVELS: Record<string, string[]> = {
   CEFR: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'],
   HSK: ['HSK1', 'HSK2', 'HSK3', 'HSK4', 'HSK5', 'HSK6'],
   JLPT: ['N5', 'N4', 'N3', 'N2', 'N1'],
+};
+
+const SKILL_VI: Record<string, string> = {
+  pronunciation: 'Phát âm',
+  vocabulary: 'Từ vựng',
+  grammar: 'Ngữ pháp',
+  listening: 'Nghe',
+  speaking: 'Nói',
+  reading: 'Đọc',
+  writing: 'Viết',
+};
+
+const MISTAKE_VI: Record<string, string> = {
+  wrong_word: 'chọn sai từ',
+  wrong_order: 'sai thứ tự từ',
+  grammar: 'ngữ pháp',
+  spelling: 'chính tả',
+  translation_error: 'dịch sai',
+  listening_confusion: 'nghe nhầm',
+  pronunciation: 'phát âm',
 };
 
 @Injectable()
@@ -31,6 +52,7 @@ export class LearningPathService {
     @InjectRepository(User)
     private readonly users: Repository<User>,
     private readonly gamification: GamificationService,
+    private readonly personalization: PersonalizationService,
   ) {}
 
   async submitPlacement(userId: string, dto: CreatePlacementAttemptDto) {
@@ -61,7 +83,73 @@ export class LearningPathService {
       relations: { items: { lesson: true } },
       order: { items: { orderIndex: 'ASC' } },
     });
-    return path ?? null;
+    if (!path) return null;
+    return this.decoratePath(userId, path);
+  }
+
+  // Biến path phẳng thành cây kỹ năng: thêm nodeType, skill, checkpoint, và
+  // LÝ DO ĐỀ XUẤT thật dựa trên mastery / mục ôn đến hạn / lỗi gần đây.
+  private async decoratePath(userId: string, path: LearningPath) {
+    const mastery = await this.personalization
+      .getMastery(userId)
+      .catch(() => [] as Awaited<ReturnType<PersonalizationService['getMastery']>>);
+    const reviewDue = await this.personalization.getDueCount(userId).catch(() => 0);
+    const mistakes = await this.personalization
+      .getRecentMistakes(userId, 20)
+      .catch(() => [] as Awaited<ReturnType<PersonalizationService['getRecentMistakes']>>);
+
+    const withData = mastery.filter((m) => m.hasData);
+    const weakest = withData.length
+      ? withData.reduce((a, b) => (a.masteryScore <= b.masteryScore ? a : b))
+      : null;
+    const weakSkills = [...mastery]
+      .sort((a, b) => a.masteryScore - b.masteryScore)
+      .slice(0, 2)
+      .map((m) => m.skill);
+
+    // Lỗi hay gặp nhất gần đây.
+    const freq = new Map<string, number>();
+    for (const m of mistakes) freq.set(m.mistakeType, (freq.get(m.mistakeType) ?? 0) + 1);
+    let topMistake: { type: string; count: number } | null = null;
+    for (const [type, count] of freq) {
+      if (!topMistake || count > topMistake.count) topMistake = { type, count };
+    }
+
+    const adaptiveReason = (): string | null => {
+      if (reviewDue > 0) return `${reviewDue} mục ôn đang đến hạn`;
+      if (weakest && weakest.masteryScore < 55) {
+        return `${SKILL_VI[weakest.skill] ?? weakest.skill} đang yếu (mastery ${weakest.masteryScore})`;
+      }
+      if (topMistake && topMistake.count >= 2) {
+        return `Bạn hay ${MISTAKE_VI[topMistake.type] ?? topMistake.type} (${topMistake.count} lần gần đây)`;
+      }
+      return null;
+    };
+
+    const items = (path.items ?? []).sort((a, b) => a.orderIndex - b.orderIndex);
+    const firstActiveIdx = items.findIndex((it) => it.status !== PathItemStatus.COMPLETED);
+
+    const decoratedItems = items.map((it, i) => {
+      const isCheckpoint = (i + 1) % 5 === 0;
+      const isBoss = i === items.length - 1 && items.length > 1;
+      const nodeType = isBoss ? 'boss_test' : isCheckpoint ? 'checkpoint' : 'lesson';
+      const reason =
+        i === firstActiveIdx
+          ? (adaptiveReason() ?? it.recommendedReason)
+          : it.recommendedReason;
+      return {
+        ...it,
+        nodeType,
+        skill: it.lesson?.lessonType ?? 'vocab',
+        recommendedReason: reason,
+      };
+    });
+
+    return {
+      ...path,
+      items: decoratedItems,
+      meta: { weakSkills, reviewDueCount: reviewDue },
+    };
   }
 
   async completeItem(userId: string, itemId: string) {

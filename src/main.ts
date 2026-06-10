@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 if (!globalThis.crypto) {
   Object.defineProperty(globalThis, 'crypto', {
@@ -32,13 +33,25 @@ async function bootstrap() {
         'Weak JWT secret. Set JWT_ACCESS_SECRET and JWT_REFRESH_SECRET to random strings with at least 24 characters.',
       );
     }
+    // Production tuyệt đối không được bật synchronize (rủi ro mất/đổi schema).
+    if (config.get<boolean>('database.synchronize')) {
+      throw new Error(
+        'DB_SYNCHRONIZE must be false in production. Use migrations instead.',
+      );
+    }
   }
 
   const apiPrefix = config.get<string>('apiPrefix', 'api/v1');
   app.setGlobalPrefix(apiPrefix);
 
+  // CORS: hỗ trợ nhiều domain frontend, ngăn cách bằng dấu phẩy.
+  const corsOrigin = config
+    .get<string>('corsOrigin', 'http://localhost:3000')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: config.get<string>('corsOrigin', 'http://localhost:3000'),
+    origin: corsOrigin.length === 1 ? corsOrigin[0] : corsOrigin,
     credentials: true,
   });
 
@@ -50,18 +63,24 @@ async function bootstrap() {
     }),
   );
 
+  // Chuẩn hóa mọi lỗi thành response có code/traceId (không lộ stack/secret).
+  app.useGlobalFilters(new AllExceptionsFilter());
+
   const uploadDir = join(process.cwd(), config.get<string>('uploads.dir', 'uploads'));
   if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
   app.useStaticAssets(uploadDir, { prefix: '/uploads/' });
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Web_Lyn API')
-    .setDescription('AI language learning platform API')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup(`${apiPrefix}/docs`, app, document);
+  // Swagger chỉ bật khi được phép (mặc định tắt ở production).
+  if (config.get<boolean>('enableSwagger')) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Web_Lyn API')
+      .setDescription('AI language learning platform API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup(`${apiPrefix}/docs`, app, document);
+  }
 
   const port = config.get<number>('port', 3001);
   await app.listen(port);

@@ -15,6 +15,8 @@ import { UpdateLessonDto } from './dto/lesson.dto';
 import { CreateExerciseDto } from './dto/exercise.dto';
 import { CreateVocabularyDto } from './dto/vocabulary.dto';
 import { Admin } from '../../common/decorators/admin.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuditService } from '../audit/audit.service';
 
 @ApiTags('lessons')
 @Controller('lessons')
@@ -23,6 +25,7 @@ export class LessonsController {
     private readonly lessonsService: LessonsService,
     private readonly exercisesService: ExercisesService,
     private readonly vocabularyService: VocabularyService,
+    private readonly audit: AuditService,
   ) {}
 
   // Chi tiết bài học (kèm bài tập + từ vựng) — công khai.
@@ -33,14 +36,38 @@ export class LessonsController {
 
   @Admin()
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateLessonDto) {
-    return this.lessonsService.update(id, dto);
+  async update(
+    @CurrentUser('id') actorId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateLessonDto,
+  ) {
+    const updated = await this.lessonsService.update(id, dto);
+    await this.audit.record({
+      actorId,
+      action: dto.isPublished === true ? 'lesson.publish' : 'lesson.update',
+      entityType: 'lesson',
+      entityId: id,
+      after: { isPublished: updated.isPublished, title: updated.title },
+    });
+    return updated;
+  }
+
+  @Admin()
+  @Get(':id/validate-publish')
+  validatePublish(@Param('id') id: string) {
+    return this.lessonsService.validatePublish(id);
   }
 
   @Admin()
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.lessonsService.remove(id);
+  async remove(@CurrentUser('id') actorId: string, @Param('id') id: string) {
+    await this.lessonsService.remove(id);
+    await this.audit.record({
+      actorId,
+      action: 'lesson.delete',
+      entityType: 'lesson',
+      entityId: id,
+    });
   }
 
   @Admin()

@@ -5,6 +5,10 @@ export default () => ({
   port: numberFromEnv(process.env.PORT, 3001),
   apiPrefix: process.env.API_PREFIX ?? 'api/v1',
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:3000',
+  // Swagger: mặc định bật ở dev, tắt ở production; ghi đè bằng ENABLE_SWAGGER.
+  enableSwagger: process.env.ENABLE_SWAGGER
+    ? process.env.ENABLE_SWAGGER === 'true'
+    : process.env.NODE_ENV !== 'production',
 
   database: {
     host: process.env.DB_HOST ?? process.env.MYSQLHOST ?? 'localhost',

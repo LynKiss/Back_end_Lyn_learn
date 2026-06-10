@@ -12,6 +12,7 @@ import { ExercisesService } from '../courses/exercises.service';
 import { gradeExercise } from './grader';
 import { GamificationService } from '../gamification/gamification.service';
 import { LearningPathService } from '../learning-path/learning-path.service';
+import { PersonalizationService } from '../personalization/personalization.service';
 
 @Injectable()
 export class ProgressService {
@@ -29,6 +30,7 @@ export class ProgressService {
     private readonly exercisesService: ExercisesService,
     private readonly gamification: GamificationService,
     private readonly learningPath: LearningPathService,
+    private readonly personalization: PersonalizationService,
   ) {}
 
   // ---- Ghi danh ----
@@ -86,7 +88,9 @@ export class ProgressService {
     await this.learningPath.markLessonCompleted(userId, lessonId).catch(() => {});
     // Chỉ cộng XP cho lần hoàn thành ĐẦU TIÊN (tránh farm XP).
     if (!wasCompleted) {
-      await this.gamification.awardXp(userId, 20, 'lesson_completed').catch(() => {});
+      await this.gamification
+        .awardXp(userId, 20, 'lesson_completed', lessonId)
+        .catch(() => {});
     }
     return saved;
   }
@@ -144,16 +148,35 @@ export class ProgressService {
     // Chỉ thưởng XP lần đầu làm đúng (tránh farm bằng cách nộp lại).
     if (result.autoGraded && result.isCorrect && !priorCorrect) {
       await this.gamification
-        .awardXp(userId, Math.max(5, Math.round(result.score)), 'exercise_attempt')
+        .awardXp(
+          userId,
+          Math.max(5, Math.round(result.score)),
+          'exercise_attempt',
+          exerciseId,
+        )
         .catch(() => {});
+    }
+    // Cá nhân hóa: ghi nhận lỗi sai / củng cố kỹ năng (không chặn luồng nộp bài).
+    if (result.autoGraded) {
+      if (result.isCorrect) {
+        await this.personalization
+          .recordCorrectAttempt(userId, exercise)
+          .catch(() => {});
+      } else {
+        await this.personalization
+          .recordWrongAttempt(userId, exercise, answer)
+          .catch(() => {});
+      }
     }
 
     return {
       attemptId: saved.id,
       isCorrect: result.isCorrect,
       score: result.score,
-      maxScore: exercise.points,
+      maxScore: result.maxScore,
       autoGraded: result.autoGraded,
+      explanation: result.explanation ?? null,
+      normalizedAnswer: result.normalizedAnswer ?? null,
     };
   }
 

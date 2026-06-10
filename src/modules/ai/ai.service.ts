@@ -16,6 +16,22 @@ interface SpeakingReviewInput {
   feedbackLanguage: string;
 }
 
+export interface TurnCorrection {
+  original: string;
+  suggestion: string;
+  explanation: string;
+}
+
+export interface TurnScore {
+  pronunciationScore: number;
+  fluencyScore: number;
+  grammarScore: number;
+  vocabularyScore: number;
+  naturalnessScore: number;
+  taskCompletionScore: number;
+  corrections: TurnCorrection[];
+}
+
 @Injectable()
 export class AiService {
   constructor(private readonly config: ConfigService) {}
@@ -51,6 +67,142 @@ export class AiService {
       return this.config.get<string>('ai.supportBotModel', 'gemini-2.5-flash');
     }
     return this.config.get<string>('ai.anthropicModel', 'claude-sonnet-4-6');
+  }
+
+  // Có model AI thật để hội thoại hay không (không có → dùng mock tất định).
+  hasConversationModel(): boolean {
+    return (
+      !!this.config.get<string>('ai.supportBotApiKey', '') ||
+      !!this.config.get<string>('ai.anthropicApiKey', '')
+    );
+  }
+
+  // Lượt trả lời của AI trong hội thoại. Mock khi không cấu hình AI.
+  async conversationReply(input: {
+    scenario: string;
+    targetLanguage: string;
+    history: { role: string; text: string }[];
+  }): Promise<string> {
+    if (!this.hasConversationModel()) {
+      const userTurns = input.history.filter((h) => h.role === 'user').length;
+      return this.mockScenarioReply(input.scenario, userTurns);
+    }
+    const system =
+      'You are a friendly conversation partner for language practice. Stay in character for the scenario, keep replies to 1-2 short sentences, and ask a follow-up question. Return only JSON.';
+    const user = [
+      `Scenario: ${input.scenario}`,
+      `Target language: ${input.targetLanguage}`,
+      'Conversation so far:',
+      input.history.map((h) => `${h.role}: ${h.text}`).join('\n'),
+      'Return JSON: { "reply": string }',
+    ].join('\n\n');
+    const res = (await this.callReviewModel(system, user)) as Record<string, unknown>;
+    return (
+      (res.reply as string) ??
+      (res.rawFeedback as string) ??
+      this.mockScenarioReply(input.scenario, 0)
+    );
+  }
+
+  // Chấm một lượt nói của người học. Mock khi không cấu hình AI.
+  async scoreSpeakingTurn(input: {
+    targetLanguage: string;
+    scenario: string;
+    text: string;
+  }): Promise<TurnScore> {
+    if (!this.hasConversationModel()) {
+      return this.mockTurnScore(input.text);
+    }
+    const system =
+      'You are a speaking examiner. Score one learner utterance and list concrete corrections. Return only JSON.';
+    const user = [
+      `Target language: ${input.targetLanguage}`,
+      `Scenario: ${input.scenario}`,
+      `Learner said: ${input.text}`,
+      'Return JSON with pronunciationScore, fluencyScore, grammarScore, vocabularyScore, naturalnessScore, taskCompletionScore (0-10) and corrections[] of { original, suggestion, explanation }.',
+    ].join('\n\n');
+    const res = (await this.callReviewModel(system, user)) as Record<string, unknown>;
+    if (res.rawFeedback || res.pronunciationScore == null) {
+      return this.mockTurnScore(input.text);
+    }
+    return {
+      pronunciationScore: Number(res.pronunciationScore ?? 6),
+      fluencyScore: Number(res.fluencyScore ?? 6),
+      grammarScore: Number(res.grammarScore ?? 6),
+      vocabularyScore: Number(res.vocabularyScore ?? 6),
+      naturalnessScore: Number(res.naturalnessScore ?? 6),
+      taskCompletionScore: Number(res.taskCompletionScore ?? 6),
+      corrections: Array.isArray(res.corrections)
+        ? (res.corrections as TurnCorrection[])
+        : [],
+    };
+  }
+
+  private mockScenarioReply(scenario: string, userTurns: number): string {
+    const scripts: Record<string, string[]> = {
+      cafe: [
+        'Hi! Welcome to our cafe. What can I get for you today?',
+        'Great choice! Would you like anything to eat with that?',
+        'Sure thing. Is that for here or to go?',
+        "That'll be $4.50. Anything else for you?",
+        'Perfect, your order will be ready shortly. Have a great day!',
+      ],
+      travel: [
+        'Hello! Where are you flying to today?',
+        'Wonderful. May I see your passport and boarding pass?',
+        'Is this your first time visiting? What are you most excited about?',
+        'You are all set. Your gate is B12. Have a pleasant trip!',
+      ],
+      interview: [
+        'Thanks for coming in. Could you tell me a little about yourself?',
+        'Interesting. What would you say is your greatest strength?',
+        'Why do you want to work with our team?',
+        'Great. Do you have any questions for me?',
+      ],
+      business: [
+        'Good morning. Shall we start with the quarterly results?',
+        'Could you walk me through the main risks you see?',
+        "What's your recommendation for the next steps?",
+        "Let's set a follow-up. Does Friday afternoon work for you?",
+      ],
+      daily: [
+        'Hey! How was your day today?',
+        'Oh nice. Did you do anything fun this weekend?',
+        'That sounds great! Any plans for tomorrow?',
+        "Let's catch up again soon. Take care!",
+      ],
+    };
+    const list = scripts[scenario] ?? scripts.daily;
+    return list[Math.min(userTurns, list.length - 1)];
+  }
+
+  private mockTurnScore(text: string): TurnScore {
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    const base = Math.max(4, Math.min(9, 4 + Math.round(words / 3)));
+    const corrections: TurnCorrection[] = [];
+    if (/(^|\s)i(\s|$)/.test(text)) {
+      corrections.push({
+        original: 'i',
+        suggestion: 'I',
+        explanation: 'Capitalize the pronoun "I".',
+      });
+    }
+    if (text.trim() && !/[.?!]$/.test(text.trim())) {
+      corrections.push({
+        original: text.trim().slice(-16),
+        suggestion: `${text.trim()}.`,
+        explanation: 'End your sentence with punctuation.',
+      });
+    }
+    return {
+      pronunciationScore: base,
+      fluencyScore: base,
+      grammarScore: Math.max(3, base - corrections.length),
+      vocabularyScore: base,
+      naturalnessScore: base,
+      taskCompletionScore: words >= 3 ? base : Math.max(3, base - 2),
+      corrections,
+    };
   }
 
   // Có cấu hình STT server (OpenAI) hay không.

@@ -9,6 +9,7 @@ import { ProgressController } from './progress.controller';
 import { CoursesModule } from '../courses/courses.module';
 import { GamificationModule } from '../gamification/gamification.module';
 import { LearningPathModule } from '../learning-path/learning-path.module';
+import { PersonalizationModule } from '../personalization/personalization.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { LearningPathModule } from '../learning-path/learning-path.module';
     CoursesModule,
     GamificationModule,
     LearningPathModule,
+    PersonalizationModule,
   ],
   controllers: [ProgressController],
   providers: [ProgressService],
